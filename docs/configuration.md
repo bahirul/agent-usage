@@ -15,15 +15,17 @@ The tool looks for configuration in this order:
 ```toml
 # Agent Usage Tracker Configuration
 
-[agents]
-codex = true
-claude_code = true
-
 # Database configuration
 database = ""
 
 # Auto-sync behavior
+
+# Auto-sync behavior
 autosync = false
+
+[agents]
+codex = true
+claude_code = true
 ```
 
 ## Configuration Options

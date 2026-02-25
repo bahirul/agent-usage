@@ -278,9 +278,10 @@ func DisplayAllStats(period tracker.Period, stats *tracker.UsageStatsData, perAg
 
 			// Tokens
 			tokens := FormatTokens(s.TotalTokens)
+			cachedTokens := FormatTokens(s.CachedTokens)
 
-			fmt.Printf("  %d. %s %s | %s | %s | %s | %s\n",
-				i+1, timeStr, source, model, project, duration, tokens)
+			fmt.Printf("  %d. %s %s | %s | %s | %s | %s (cached: %s)\n",
+				i+1, timeStr, source, model, project, duration, tokens, cachedTokens)
 		}
 	} else {
 		fmt.Printf("  %sNo data%s\n", ColorYellow, ColorReset)

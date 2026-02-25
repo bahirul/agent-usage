@@ -158,10 +158,11 @@ var usageCmd = &cobra.Command{
 				} else {
 					fmt.Printf("     Ended: (active)\n")
 				}
-				fmt.Printf("     Tokens: %s (in: %s, out: %s)\n",
+				fmt.Printf("     Tokens: %s (in: %s, out: %s, cached: %s)\n",
 					ui.FormatTokens(s.TotalTokens),
 					ui.FormatTokens(s.InputTokens),
-					ui.FormatTokens(s.OutputTokens))
+					ui.FormatTokens(s.OutputTokens),
+					ui.FormatTokens(s.CachedTokens))
 			}
 			fmt.Println()
 		}

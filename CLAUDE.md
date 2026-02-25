@@ -29,11 +29,12 @@ go build -o agent-usage .           # Build binary to current directory
 Config file format (TOML):
 ```toml
 [agents]
-codex = true
-claude_code = true
-
 # Auto-sync before showing stats/usage (default: false)
 autosync = true
+
+[agents]
+codex = true
+claude_code = true
 ```
 
 Default config path: `~/.agent-usage/config.toml`

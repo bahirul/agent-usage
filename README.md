@@ -44,12 +44,12 @@ make clean        # Clean build artifacts
 1. Create a config file at `~/.agent-usage/config.toml`:
 
 ```toml
+# Optional: auto-sync before showing stats
+autosync = false
+
 [agents]
 codex = true
 claude_code = true
-
-# Optional: auto-sync before showing stats
-autosync = false
 ```
 
 2. Run your first sync:
@@ -91,15 +91,15 @@ For `stats` and `usage` commands, specify a time period:
 Config file location: `~/.agent-usage/config.toml`
 
 ```toml
-[agents]
-codex = true           # Enable Codex tracking
-claude_code = true     # Enable Claude tracking
-
 # Database path (optional, defaults to ~/.agent-usage/usage.db)
 database = ""
 
 # Auto-sync before showing stats (default: false)
 autosync = false
+
+[agents]
+codex = true           # Enable Codex tracking
+claude_code = true     # Enable Claude tracking
 ```
 
 ### Custom Config Path

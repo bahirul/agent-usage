@@ -166,6 +166,29 @@ func ParseCodexSession(path string) (*CodexSession, error) {
 					// Look for result in following entries (simplified - just store the call)
 					session.ToolCalls = append(session.ToolCalls, toolCall)
 				}
+
+				// Check for token_count events
+				if eventType, ok := event["type"].(string); ok && eventType == "token_count" {
+					if info, ok := event["info"].(map[string]interface{}); ok {
+						if usage, ok := info["total_token_usage"].(map[string]interface{}); ok {
+							if v, ok := usage["input_tokens"].(float64); ok {
+								session.Tokens.Input = int(v)
+							}
+							if v, ok := usage["cached_input_tokens"].(float64); ok {
+								session.Tokens.Cached = int(v)
+							}
+							if v, ok := usage["output_tokens"].(float64); ok {
+								session.Tokens.Output = int(v)
+							}
+							if v, ok := usage["reasoning_output_tokens"].(float64); ok {
+								session.Tokens.Reasoning = int(v)
+							}
+							if v, ok := usage["total_tokens"].(float64); ok {
+								session.Tokens.Total = int(v)
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -173,9 +196,14 @@ func ParseCodexSession(path string) (*CodexSession, error) {
 	session.StartedAt = firstTimestamp
 	session.EndedAt = &lastTimestamp
 
-	// Estimate tokens (Codex doesn't provide exact token counts in the session file)
-	// We'll count characters as a rough estimate
-	estimateTokens(session)
+	// Estimate tokens only if not already set from token_count event
+	if session.Tokens.Total == 0 {
+		estimateTokens(session)
+	} else {
+		// Calculate cost using actual token counts
+		// $3/million input, $15/million output
+		session.Cost = float64(session.Tokens.Input)*3/1_000_000 + float64(session.Tokens.Output)*15/1_000_000
+	}
 
 	return session, nil
 }
