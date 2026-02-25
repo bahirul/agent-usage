@@ -17,10 +17,26 @@ A Go CLI tool to track AI coding agent usage (Codex, Claude Code). Monitor your 
 # Clone and build
 git clone https://github.com/ari/agent-usage.git
 cd agent-usage
+make build
+
+# Or use Go directly
 go build -o agent-usage .
 
-# Or install globally
+# Install globally
+make install
+# or
 go install .
+```
+
+## Build Commands
+
+```bash
+make build        # Build to build/agent-usage
+make build/osx    # Build for macOS
+make build/linux  # Build for Linux
+make build/windows # Build for Windows
+make test         # Run tests
+make clean        # Clean build artifacts
 ```
 
 ## Quick Start

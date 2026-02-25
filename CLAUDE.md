@@ -9,10 +9,13 @@ Agent Usage Tracker is a Go CLI tool to track AI coding agent usage (Codex, Clau
 ## Build & Run
 
 ```bash
-go build -o agent-usage .           # Build binary
-./agent-usage --help                # Show help
-./agent-usage info                  # Show loaded config
-./agent-usage -c /path/to/config.toml info  # Use custom config
+make build                          # Build binary to build/agent-usage
+./build/agent-usage --help          # Show help
+./build/agent-usage info            # Show loaded config
+./build/agent-usage -c /path/to/config.toml info  # Use custom config
+
+# Or use Go directly
+go build -o agent-usage .           # Build binary to current directory
 ```
 
 ## Architecture

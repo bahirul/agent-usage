@@ -45,3 +45,22 @@ internal/tracker/     - Session parsing and database
   - claude_parser.go - Claude session parser
 internal/ui/         - Terminal display
 ```
+
+## Development
+
+```bash
+make build        # Build to build/agent-usage
+make test         # Run tests
+make test/verbose # Run with verbose output
+make test/coverage # Run with coverage
+make clean        # Clean build artifacts
+make install      # Install to GOBIN
+```
+
+### Running
+
+```bash
+./build/agent-usage --help
+./build/agent-usage --version
+./build/agent-usage stats
+```
