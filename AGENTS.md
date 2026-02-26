@@ -145,3 +145,27 @@ Debug output shows:
 
 - **Last Sync Time**: Stats and usage output display the last sync timestamp with seconds precision. Shows "Never synced" if no sync has occurred.
 - **Info Command**: Shows configuration and last sync time per agent.
+
+## Commit Message Guidelines
+
+Follow the [seven rules](https://chris.beams.io/git-commit) for great commit messages:
+
+1. **Separate subject from body** with a blank line
+2. **Limit subject line to 50 characters**
+3. **Capitalize the subject line**
+4. **Do not end with a period**
+5. **Use imperative mood** (e.g., "Add feature" not "Added feature")
+6. **Wrap body at 72 characters**
+7. **Explain what and why, not how**
+
+Example:
+```
+Add cursor agent support
+
+Implement session parsing for Cursor IDE. Extract session ID,
+project path, model, timestamps, and token usage from JSONL logs.
+
+Resolves: #123
+```
+
+Use this test: "If applied, this commit will *your subject line here*"
