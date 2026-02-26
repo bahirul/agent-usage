@@ -25,11 +25,12 @@ type CodexSession struct {
 
 // TokenUsage represents token usage for a session
 type TokenUsage struct {
-	Input     int
-	Output    int
-	Cached    int
-	Reasoning int
-	Total     int
+	Input         int
+	Output        int
+	CacheCreation int
+	CacheRead     int
+	Reasoning     int
+	Total         int
 }
 
 // CodexMessage represents a message in a Codex session
@@ -175,7 +176,7 @@ func ParseCodexSession(path string) (*CodexSession, error) {
 								session.Tokens.Input = int(v)
 							}
 							if v, ok := usage["cached_input_tokens"].(float64); ok {
-								session.Tokens.Cached = int(v)
+								session.Tokens.CacheCreation = int(v)
 							}
 							if v, ok := usage["output_tokens"].(float64); ok {
 								session.Tokens.Output = int(v)
@@ -321,6 +322,8 @@ func estimateTokens(session *CodexSession) {
 	// Rough estimate: 4 chars per token
 	session.Tokens.Input = inputChars / 4
 	session.Tokens.Output = outputChars / 4
+	session.Tokens.CacheCreation = 0
+	session.Tokens.CacheRead = 0
 	session.Tokens.Total = session.Tokens.Input + session.Tokens.Output
 
 	// Cost estimation (approximate)

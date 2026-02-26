@@ -79,7 +79,7 @@ func TestFormatCost(t *testing.T) {
 func TestFormatDateTime(t *testing.T) {
 	// Test with a known timestamp (using local timezone)
 	ts := time.Date(2026, 2, 24, 22, 55, 0, 0, time.Local).Unix()
-	expected := "2026-02-24 22:55"
+	expected := "2026-02-24 22:55:00"
 
 	result := FormatDateTime(ts)
 	if result != expected {

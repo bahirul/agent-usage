@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,11 +40,46 @@ var rootCmd = &cobra.Command{
 
 var infoCmd = &cobra.Command{
 	Use:   "info",
-	Short: "Show loaded configuration",
+	Short: "Show loaded configuration and status",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("Config loaded:\n")
-		fmt.Printf("  Codex: %v\n", cfg.Agents.Codex)
-		fmt.Printf("  Claude: %v\n", cfg.Agents.ClaudeCode)
+		fmt.Println("=== Configuration ===")
+		fmt.Printf("  Agents:\n")
+		fmt.Printf("    Codex: %v\n", cfg.Agents.Codex)
+		fmt.Printf("    Claude: %v\n", cfg.Agents.ClaudeCode)
+
+		// Get last sync times from database
+		dbPath := cfg.GetDatabasePath()
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			fmt.Println("\n=== Last Sync ===")
+			fmt.Println("  No database found")
+			return
+		}
+
+		db, err := tracker.NewSQLiteTracker(dbPath)
+		if err != nil {
+			fmt.Printf("Error opening database: %v\n", err)
+			return
+		}
+		defer db.Close()
+
+		ctx := context.Background()
+		fmt.Println("\n=== Last Sync ===")
+		if cfg.Agents.Codex {
+			syncTime, _ := db.GetLastSyncTime(ctx, "codex")
+			if syncTime > 0 {
+				fmt.Printf("  Codex: %s\n", time.Unix(syncTime, 0).Format("2006-01-02 15:04:05"))
+			} else {
+				fmt.Printf("  Codex: Never synced\n")
+			}
+		}
+		if cfg.Agents.ClaudeCode {
+			syncTime, _ := db.GetLastSyncTime(ctx, "claude")
+			if syncTime > 0 {
+				fmt.Printf("  Claude: %s\n", time.Unix(syncTime, 0).Format("2006-01-02 15:04:05"))
+			} else {
+				fmt.Printf("  Claude: Never synced\n")
+			}
+		}
 	},
 }
 
@@ -81,10 +117,8 @@ var usageCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Auto-sync if enabled in config
-		if cfg.AutoSync {
-			runSync(agentName)
-		}
+		// Run sync for the selected agent
+		runSync(agentName)
 
 		// Get database path
 		dbPath := cfg.GetDatabasePath()
@@ -158,11 +192,12 @@ var usageCmd = &cobra.Command{
 				} else {
 					fmt.Printf("     Ended: (active)\n")
 				}
-				fmt.Printf("     Tokens: %s (in: %s, out: %s, cached: %s)\n",
+				fmt.Printf("     Tokens: %s (in: %s, out: %s, cache: %s/%s)\n",
 					ui.FormatTokens(s.TotalTokens),
 					ui.FormatTokens(s.InputTokens),
 					ui.FormatTokens(s.OutputTokens),
-					ui.FormatTokens(s.CachedTokens))
+					ui.FormatTokens(s.CacheCreationTokens),
+					ui.FormatTokens(s.CacheReadTokens))
 			}
 			fmt.Println()
 		}
@@ -193,10 +228,8 @@ var statsCmd = &cobra.Command{
 			}
 		}
 
-		// Auto-sync if enabled in config
-		if cfg.AutoSync {
-			runSyncAll()
-		}
+		// Run sync for all enabled agents
+		runSyncAll()
 
 		// Get database path
 		dbPath := cfg.GetDatabasePath()
@@ -236,123 +269,6 @@ var statsCmd = &cobra.Command{
 
 		// Display stats
 		ui.DisplayAllStats(period, stats, perAgent)
-	},
-}
-
-var syncCmd = &cobra.Command{
-	Use:   "sync <agent>",
-	Short: "Sync sessions from agent directory",
-	Long:  "Sync all sessions from Codex or Claude sessions directory into the database. Use 'all' to sync all enabled agents.",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		agentName := args[0]
-
-		// Handle "all" case
-		if agentName == "all" {
-			runSyncAll()
-			return
-		}
-
-		var sessionsDir string
-		var parseFunc func(string) (interface{}, error)
-		var trackFunc func(*tracker.SQLiteTracker, context.Context, interface{}) error
-
-		switch agentName {
-		case "codex":
-			sessionsDir = tracker.GetDefaultSessionsDir()
-			parseFunc = func(path string) (interface{}, error) {
-				return tracker.ParseCodexSession(path)
-			}
-			trackFunc = func(t *tracker.SQLiteTracker, ctx context.Context, sess interface{}) error {
-				return t.TrackSession(ctx, sess.(*tracker.CodexSession))
-			}
-		case "claude":
-			sessionsDir = tracker.GetClaudeSessionsDir()
-			parseFunc = func(path string) (interface{}, error) {
-				return tracker.ParseClaudeSession(path)
-			}
-			trackFunc = func(t *tracker.SQLiteTracker, ctx context.Context, sess interface{}) error {
-				return t.TrackClaudeSession(ctx, sess.(*tracker.ClaudeSession))
-			}
-		default:
-			fmt.Printf("Invalid agent: %s. Use codex or claude\n", agentName)
-			os.Exit(1)
-		}
-
-		// Get database path
-		dbPath := cfg.GetDatabasePath()
-
-		// Ensure directory exists
-		dir := filepath.Dir(dbPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			fmt.Printf("Error creating database directory: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Open database
-		db, err := tracker.NewSQLiteTracker(dbPath)
-		if err != nil {
-			fmt.Printf("Error opening database: %v\n", err)
-			os.Exit(1)
-		}
-		defer db.Close()
-
-		// Find all session files recursively
-		var sessionFiles []string
-		err = filepath.Walk(sessionsDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if !info.IsDir() && filepath.Ext(info.Name()) == ".jsonl" {
-				sessionFiles = append(sessionFiles, path)
-			}
-			return nil
-		})
-		if err != nil {
-			fmt.Printf("Error walking sessions directory: %v\n", err)
-			os.Exit(1)
-		}
-
-		if len(sessionFiles) == 0 {
-			fmt.Printf("No session files found in %s\n", sessionsDir)
-			return
-		}
-
-		fmt.Printf("Found %d session files\n", len(sessionFiles))
-
-		// Parse and track each session
-		ctx := context.Background()
-		tracked := 0
-		skipped := 0
-
-		for _, sessionPath := range sessionFiles {
-			session, err := parseFunc(sessionPath)
-			if err != nil {
-				fmt.Printf("Error parsing %s: %v\n", filepath.Base(sessionPath), err)
-				continue
-			}
-
-			if err := trackFunc(db, ctx, session); err != nil {
-				// Session already exists, skip
-				skipped++
-				continue
-			}
-
-			tracked++
-			// Get session ID and model based on type
-			if cs, ok := session.(*tracker.CodexSession); ok {
-				fmt.Printf("Tracked: %s (model: %s)\n", cs.ID, cs.Model)
-			} else if cs, ok := session.(*tracker.ClaudeSession); ok {
-				fmt.Printf("Tracked: %s (model: %s)\n", cs.ID, cs.Model)
-			}
-		}
-
-		fmt.Printf("\nSync complete: %d new sessions tracked, %d skipped\n", tracked, skipped)
-
-		// Save last sync time
-		if tracked > 0 || skipped > 0 {
-			db.SetLastSyncTime(ctx, agentName, time.Now().Unix())
-		}
 	},
 }
 
@@ -419,6 +335,7 @@ func runSync(agentName string) {
 	ctx := context.Background()
 	tracked := 0
 	skipped := 0
+	backfilled := 0
 
 	for _, sessionPath := range sessionFiles {
 		session, err := parseFunc(sessionPath)
@@ -427,6 +344,14 @@ func runSync(agentName string) {
 		}
 
 		if err := trackFunc(db, ctx, session); err != nil {
+			if errors.Is(err, tracker.ErrSessionBackfilled) {
+				backfilled++
+				continue
+			}
+			if errors.Is(err, tracker.ErrSessionAlreadyTracked) {
+				skipped++
+				continue
+			}
 			skipped++
 			continue
 		}
@@ -435,11 +360,14 @@ func runSync(agentName string) {
 	}
 
 	if tracked > 0 {
-		fmt.Printf("[Auto-sync] Synced %d new sessions for %s\n", tracked, agentName)
+		fmt.Printf("[Sync] Synced %d new sessions for %s\n", tracked, agentName)
+	}
+	if backfilled > 0 {
+		fmt.Printf("[Sync] Updated %d existing sessions for %s\n", backfilled, agentName)
 	}
 
 	// Save last sync time
-	if tracked > 0 || skipped > 0 {
+	if tracked > 0 || skipped > 0 || backfilled > 0 {
 		ctx := context.Background()
 		db.SetLastSyncTime(ctx, agentName, time.Now().Unix())
 	}
@@ -466,6 +394,5 @@ func init() {
 	usageCmd.Flags().BoolVarP(&debug, "debug", "d", false, "Show debug output (SQL queries, raw data, time filters)")
 	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(usageCmd)
-	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(statsCmd)
 }

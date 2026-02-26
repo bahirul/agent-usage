@@ -48,19 +48,17 @@ make clean        # Clean build artifacts
 autosync = false
 
 [agents]
+## Quick Start
+
+1. Create a config file at `~/.agent-usage/config.toml`:
+
+```toml
+[agents]
 codex = true
 claude_code = true
 ```
 
-2. Run your first sync:
-
-```bash
-./agent-usage sync all        # Sync all enabled agents
-./agent-usage sync codex       # Sync only Codex
-./agent-usage sync claude      # Sync only Claude
-```
-
-3. View usage statistics:
+2. View usage statistics (sync happens automatically):
 
 ```bash
 ./agent-usage stats            # Combined stats for all agents
@@ -72,10 +70,8 @@ claude_code = true
 
 | Command | Description |
 |---------|-------------|
-| `./agent-usage sync <agent>` | Sync sessions from agent directory |
-| `./agent-usage sync all` | Sync all enabled agents |
-| `./agent-usage stats [period]` | Show combined usage stats |
-| `./agent-usage usage <agent> [period]` | Show per-agent stats |
+| `./agent-usage stats [period]` | Show combined usage stats (autosyncs all) |
+| `./agent-usage usage <agent> [period]` | Show per-agent stats (autosyncs agent) |
 | `./agent-usage info` | Show loaded configuration |
 | `./agent-usage --help` | Show help |
 
@@ -93,9 +89,6 @@ Config file location: `~/.agent-usage/config.toml`
 ```toml
 # Database path (optional, defaults to ~/.agent-usage/usage.db)
 database = ""
-
-# Auto-sync before showing stats (default: false)
-autosync = false
 
 [agents]
 codex = true           # Enable Codex tracking

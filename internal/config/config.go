@@ -10,9 +10,8 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Agents    AgentsConfig `mapstructure:"agents"`
-	Database  string       `mapstructure:"database"`
-	AutoSync  bool         `mapstructure:"autosync"`
+	Agents   AgentsConfig `mapstructure:"agents"`
+	Database string       `mapstructure:"database"`
 }
 
 // AgentsConfig contains the enabled agents
@@ -25,11 +24,18 @@ type AgentsConfig struct {
 func LoadConfig(configPath string) (*Config, error) {
 	viperInstance := viper.New()
 
+	// Set defaults
+	viperInstance.SetDefault("agents.codex", true)
+	viperInstance.SetDefault("agents.claude", true)
+
 	// If custom config path provided, use it directly
 	if configPath != "" {
 		viperInstance.SetConfigFile(configPath)
 		if err := viperInstance.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+			}
+			// If it doesn't exist, we just continue with defaults
 		}
 	} else {
 		// Try default location: ~/.agent-usage/config.toml
@@ -38,11 +44,18 @@ func LoadConfig(configPath string) (*Config, error) {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
 
-		defaultPath := filepath.Join(homeDir, ".agent-usage", "config.toml")
+		defaultDir := filepath.Join(homeDir, ".agent-usage")
+		defaultPath := filepath.Join(defaultDir, "config.toml")
 		viperInstance.SetConfigFile(defaultPath)
 
 		if err := viperInstance.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to read config at default location %s: %w", defaultPath, err)
+			// If file doesn't exist, we'll use defaults
+			if !os.IsNotExist(err) {
+				// For other errors (like permission or syntax), return error
+				return nil, fmt.Errorf("failed to read config at %s: %w", defaultPath, err)
+			}
+			// Optional: Create the directory if it doesn't exist
+			os.MkdirAll(defaultDir, 0755)
 		}
 	}
 
@@ -65,4 +78,13 @@ func (c *Config) GetDatabasePath() string {
 		return "~/.agent-usage/usage.db"
 	}
 	return filepath.Join(homeDir, ".agent-usage", "usage.db")
+}
+
+// GetConfigDir returns the config directory path (~/.agent-usage)
+func (c *Config) GetConfigDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "~/.agent-usage"
+	}
+	return filepath.Join(homeDir, ".agent-usage")
 }

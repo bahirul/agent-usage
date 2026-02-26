@@ -6,70 +6,15 @@ This document provides detailed reference for all CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `sync` | Sync sessions from agent directories |
-| `stats` | Show combined usage statistics |
-| `usage` | Show per-agent usage statistics |
-| `info` | Display loaded configuration |
+| `stats` | Show combined usage statistics (autosyncs all) |
+| `usage` | Show per-agent usage statistics (autosyncs agent) |
+| `info` | Display loaded configuration and status |
 
 ## Global Flags
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
 | `--config` | `-c` | Path to config file | `~/.agent-usage/config.toml` |
-
-## sync
-
-Sync sessions from agent directory into the database.
-
-### Usage
-
-```bash
-agent-usage sync <agent>
-agent-usage sync all
-```
-
-### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `agent` | Agent name: `codex`, `claude`, or `all` |
-
-### Description
-
-The sync command:
-1. Scans the agent's session directory for JSONL files
-2. Parses each session file
-3. Stores sessions in the SQLite database
-4. Updates the last sync timestamp
-
-### Session Directories
-
-- Codex: `~/.codex/sessions/`
-- Claude: `~/.claude/projects/`
-
-### Examples
-
-```bash
-# Sync only Codex sessions
-./agent-usage sync codex
-
-# Sync only Claude sessions
-./agent-usage sync claude
-
-# Sync all enabled agents
-./agent-usage sync all
-```
-
-### Output
-
-```
-Found 15 session files
-Tracked: session-abc123 (model: o3)
-Tracked: session-def456 (model: o3)
-...
-
-Sync complete: 12 new sessions tracked, 3 skipped
-```
 
 ## stats
 
@@ -89,7 +34,7 @@ agent-usage stats [period]
 
 ### Description
 
-Shows aggregated statistics across all enabled agents. If `autosync=true` in config, automatically syncs before displaying stats.
+Shows aggregated statistics across all enabled agents. This command **automatically syncs** all enabled agents before displaying the results.
 
 ### Options
 
@@ -100,13 +45,13 @@ Shows aggregated statistics across all enabled agents. If `autosync=true` in con
 ### Examples
 
 ```bash
-# Today's stats
+# Today's stats (autosyncs all)
 ./agent-usage stats
 
-# This week's stats
+# This week's stats (autosyncs all)
 ./agent-usage stats week
 
-# Last 30 days
+# Last 30 days (autosyncs all)
 ./agent-usage stats month
 ```
 
@@ -139,20 +84,20 @@ agent-usage usage <agent> [period] [flags]
 ### Flags
 
 | Flag | Short | Description |
-|------|------|-------------|
+|------|-------|-------------|
 | `--debug` | `-d` | Show debug output |
 
 ### Description
 
-Shows detailed statistics for a single agent. If `autosync=true` in config, automatically syncs before displaying stats.
+Shows detailed statistics for a single agent. This command **automatically syncs** the specified agent before displaying the results.
 
 ### Examples
 
 ```bash
-# Codex stats for today
+# Codex stats for today (autosyncs codex)
 ./agent-usage usage codex
 
-# Claude stats for this week
+# Claude stats for this week (autosyncs claude)
 ./agent-usage usage claude week
 
 # With debug output
@@ -170,7 +115,7 @@ Shows detailed statistics for a single agent. If `autosync=true` in config, auto
 
 ## info
 
-Display loaded configuration.
+Display loaded configuration and status.
 
 ### Usage
 
@@ -180,14 +125,21 @@ agent-usage info
 
 ### Description
 
-Shows which agents are enabled and the config file path being used.
+Shows:
+- Configuration (agents)
+- Last sync time per agent
 
 ### Example Output
 
 ```
-Config loaded:
-  Codex: true
-  Claude: true
+=== Configuration ===
+  Agents:
+    Codex: true
+    Claude: true
+
+=== Last Sync ===
+  Codex: 2026-02-26 05:50:52
+  Claude: 2026-02-26 05:50:52
 ```
 
 ## Debug Mode
@@ -218,7 +170,7 @@ Use the `--debug` or `-d` flag with `usage` command to see:
      Model: o3, Project: /Users/user/project
      Started: 2026-02-26 10:00:00
      Ended: 2026-02-26 10:30:00, Duration: 30m0s
-     Tokens: 100.0K (in: 80.0K, out: 20.0K, cached: 0)
+     Tokens: 100.0K (in: 80.0K, out: 20.0K, cache: 0/0)
   ...
 ```
 

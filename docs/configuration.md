@@ -15,17 +15,13 @@ The tool looks for configuration in this order:
 ```toml
 # Agent Usage Tracker Configuration
 
-# Database configuration
-database = ""
-
-# Auto-sync behavior
-
-# Auto-sync behavior
-autosync = false
-
 [agents]
 codex = true
-claude_code = true
+claude = true
+
+[sync]
+autosync = true
+sync_interval = 5
 ```
 
 ## Configuration Options
@@ -37,7 +33,7 @@ Controls which agents to track.
 | Key | Type | Description | Default |
 |-----|------|-------------|---------|
 | `codex` | boolean | Enable Codex tracking | `false` |
-| `claude_code` | boolean | Enable Claude tracking | `false` |
+| `claude` | boolean | Enable Claude tracking | `false` |
 
 At least one agent must be enabled.
 
@@ -63,21 +59,20 @@ database = "/Users/name/data/agent-usage.db"
 database = "./data/usage.db"
 ```
 
-### autosync
+### [sync]
 
-Automatically sync sessions before showing stats or usage.
+Controls sync behavior.
 
-| Type | Description | Default |
-|------|-------------|---------|
-| boolean | Auto-sync before displaying stats | `false` |
-
-When enabled:
-- `stats` command syncs all enabled agents first
-- `usage` command syncs the specified agent first
+| Key | Type | Description | Default |
+|-----|------|-------------|---------|
+| `autosync` | boolean | Enable automatic sync | `false` |
+| `sync_interval` | integer | Sync interval in seconds | `5` |
 
 Example:
 ```toml
+[sync]
 autosync = true
+sync_interval = 10
 ```
 
 ## Environment Variables
@@ -98,13 +93,15 @@ codex = true
 ```toml
 [agents]
 codex = true
-claude_code = true
+claude = true
 
 # Custom database location
 database = "/Users/developer/data/agent-usage.db"
 
-# Auto-sync before showing stats
+# Background sync configuration
+[sync]
 autosync = true
+sync_interval = 5
 ```
 
 ### Development Setup
@@ -112,13 +109,15 @@ autosync = true
 ```toml
 [agents]
 codex = true
-claude_code = true
+claude = true
 
 # Use local database for development
 database = "./dev.db"
 
-# Enable auto-sync during development
+# Enable background sync during development
+[sync]
 autosync = true
+sync_interval = 5
 ```
 
 ## Config Loading Process
@@ -159,14 +158,19 @@ func LoadConfig(configPath string) (*Config, error) {
 
 ```go
 type Config struct {
-    Agents    AgentsConfig `mapstructure:"agents"`
-    Database  string       `mapstructure:"database"`
-    AutoSync  bool         `mapstructure:"autosync"`
+    Agents      AgentsConfig `mapstructure:"agents"`
+    Database    string       `mapstructure:"database"`
+    Sync        SyncConfig   `mapstructure:"sync"`
 }
 
 type AgentsConfig struct {
     Codex      bool `mapstructure:"codex"`
     ClaudeCode bool `mapstructure:"claude"`
+}
+
+type SyncConfig struct {
+    AutoSync     bool `mapstructure:"autosync"`
+    SyncInterval int  `mapstructure:"sync_interval"`
 }
 ```
 
@@ -194,25 +198,9 @@ touch ~/.agent-usage/config.toml
 ### Invalid configuration
 
 Check TOML syntax. Common issues:
-- Missing section brackets `[agents]`
+- Missing section brackets `[agents]` or `[sync]`
 - Boolean values must be `true` or `false` (lowercase)
 - No trailing commas
-
-## Auto-Sync Behavior
-
-When `autosync = true`:
-
-1. **stats command**:
-   - Before querying stats, calls `runSyncAll()`
-   - Syncs all agents enabled in config
-   - Then displays combined stats
-
-2. **usage command**:
-   - Before querying stats for an agent, calls `runSync(agentName)`
-   - Syncs only the specified agent
-   - Then displays agent-specific stats
-
-This ensures you always see the latest data without manual syncing.
 
 ## Database Path Resolution
 

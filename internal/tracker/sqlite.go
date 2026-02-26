@@ -10,34 +10,35 @@ import (
 type Period string
 
 const (
-	PeriodDay     Period = "day"
-	PeriodWeek    Period = "week"
-	PeriodMonth   Period = "month"
+	PeriodDay   Period = "day"
+	PeriodWeek  Period = "week"
+	PeriodMonth Period = "month"
 )
 
 // UsageStatsData holds all usage statistics for display
 type UsageStatsData struct {
-	LastSession       *SessionRow
-	RecentSessions   []SessionRow
-	TopModels         []ModelUsage
-	DailySummaries    []DailySummary   // For weekly period
-	WeeklySummaries   []WeeklySummary  // For monthly period
-	TotalSessionTime  int64 // in seconds
-	TotalInputTokens  int64
-	TotalOutputTokens int64
-	TotalCachedTokens int64
-	TotalTokens       int64
-	TotalCost         float64
-	TotalMessages     int64
-	TotalToolCalls    int64
-	UniqueProjects    int64
-	SessionCount      int64
-	LastSyncTime      int64 // Unix timestamp of last sync for the agent
+	LastSession        *SessionRow
+	RecentSessions     []SessionRow
+	TopModels          []ModelUsage
+	DailySummaries     []DailySummary  // For weekly period
+	WeeklySummaries    []WeeklySummary // For monthly period
+	TotalSessionTime   int64           // in seconds
+	TotalInputTokens   int64
+	TotalOutputTokens  int64
+	TotalCacheCreation int64
+	TotalCacheRead     int64
+	TotalTokens        int64
+	TotalCost          float64
+	TotalMessages      int64
+	TotalToolCalls     int64
+	UniqueProjects     int64
+	SessionCount       int64
+	LastSyncTime       int64 // Unix timestamp of last sync for the agent
 }
 
 // ModelUsage represents model usage count
 type ModelUsage struct {
-	Model       string
+	Model        string
 	SessionCount int64
 }
 
@@ -76,6 +77,11 @@ func (t *SQLiteTracker) SetLastSyncTime(ctx context.Context, agent string, times
 	return t.db.SetLastSyncTime(ctx, agent, timestamp)
 }
 
+// GetLastSyncTime returns the last sync time for an agent (unix timestamp, 0 if never synced)
+func (t *SQLiteTracker) GetLastSyncTime(ctx context.Context, agent string) (int64, error) {
+	return t.db.GetLastSyncTime(ctx, agent)
+}
+
 // StartSession is not used for Codex (uses file-based sessions)
 func (t *SQLiteTracker) StartSession(agent Agent) (*Session, error) {
 	return nil, fmt.Errorf("StartSession not supported for Codex - use file-based tracking")
@@ -101,8 +107,8 @@ func (t *SQLiteTracker) GetUsage(agent Agent) (*UsageStats, error) {
 	}
 
 	return &UsageStats{
-		Agent:            agent,
-		TotalSessions:   totalSessions,
+		Agent:             agent,
+		TotalSessions:     totalSessions,
 		TotalInputTokens:  int(totalInput),
 		TotalOutputTokens: int(totalOutput),
 	}, nil
@@ -116,7 +122,27 @@ func (t *SQLiteTracker) TrackSession(ctx context.Context, session *CodexSession)
 		return fmt.Errorf("failed to check existing session: %w", err)
 	}
 	if existing != nil {
-		return fmt.Errorf("session %s already tracked", session.ID)
+		if len(session.Messages) > 0 {
+			msgCount, err := t.db.GetMessageCountBySessionID(ctx, existing.ID)
+			if err != nil {
+				return fmt.Errorf("failed to check message count: %w", err)
+			}
+			if msgCount == 0 {
+				for _, msg := range session.Messages {
+					msgRow := &MessageRow{
+						SessionID: existing.ID,
+						Role:      msg.Role,
+						Content:   msg.Content,
+						Timestamp: msg.Timestamp.Unix(),
+					}
+					if _, err := t.db.InsertMessage(ctx, msgRow); err != nil {
+						return fmt.Errorf("failed to insert message: %w", err)
+					}
+				}
+				return fmt.Errorf("%w: %s", ErrSessionBackfilled, session.ID)
+			}
+		}
+		return fmt.Errorf("%w: %s", ErrSessionAlreadyTracked, session.ID)
 	}
 
 	// Convert started_at to unix timestamp
@@ -129,19 +155,20 @@ func (t *SQLiteTracker) TrackSession(ctx context.Context, session *CodexSession)
 	}
 
 	sessionRow := &SessionRow{
-		ExternalID:      session.ID,
-		Source:          "codex",
-		ProjectPath:     session.ProjectPath,
-		Model:           session.Model,
-		Provider:        session.Provider,
-		StartedAt:       startedAt,
-		EndedAt:         endedAt,
-		InputTokens:     int64(session.Tokens.Input),
-		OutputTokens:    int64(session.Tokens.Output),
-		CachedTokens:    int64(session.Tokens.Cached),
-		ReasoningTokens: int64(session.Tokens.Reasoning),
-		TotalTokens:     int64(session.Tokens.Total),
-		Cost:            session.Cost,
+		ExternalID:          session.ID,
+		Source:              "codex",
+		ProjectPath:         session.ProjectPath,
+		Model:               session.Model,
+		Provider:            session.Provider,
+		StartedAt:           startedAt,
+		EndedAt:             endedAt,
+		InputTokens:         int64(session.Tokens.Input),
+		OutputTokens:        int64(session.Tokens.Output),
+		CacheCreationTokens: int64(session.Tokens.CacheCreation),
+		CacheReadTokens:     int64(session.Tokens.CacheRead),
+		ReasoningTokens:     int64(session.Tokens.Reasoning),
+		TotalTokens:         int64(session.Tokens.Total),
+		Cost:                session.Cost,
 	}
 
 	sessionID, err := t.db.InsertSession(ctx, sessionRow)
@@ -281,14 +308,15 @@ func (t *SQLiteTracker) GetUsageStats(ctx context.Context, agent Agent, period P
 		TotalSessionTime:   stats.TotalSessionTime,
 		TotalInputTokens:   stats.TotalInputTokens,
 		TotalOutputTokens:  stats.TotalOutputTokens,
-		TotalCachedTokens:  stats.TotalCachedTokens,
+		TotalCacheCreation: stats.TotalCacheCreation,
+		TotalCacheRead:     stats.TotalCacheRead,
 		TotalTokens:        stats.TotalTokens,
 		TotalCost:          stats.TotalCost,
 		TotalMessages:      msgCount,
 		TotalToolCalls:     toolCallCount,
 		UniqueProjects:     uniqueProjects,
 		SessionCount:       stats.SessionCount,
-		LastSyncTime:      lastSyncTime,
+		LastSyncTime:       lastSyncTime,
 	}, nil
 }
 
@@ -322,7 +350,27 @@ func (t *SQLiteTracker) TrackClaudeSession(ctx context.Context, session *ClaudeS
 		return fmt.Errorf("failed to check existing session: %w", err)
 	}
 	if existing != nil {
-		return fmt.Errorf("session %s already tracked", session.ID)
+		if len(session.Messages) > 0 {
+			msgCount, err := t.db.GetMessageCountBySessionID(ctx, existing.ID)
+			if err != nil {
+				return fmt.Errorf("failed to check message count: %w", err)
+			}
+			if msgCount == 0 {
+				for _, msg := range session.Messages {
+					msgRow := &MessageRow{
+						SessionID: existing.ID,
+						Role:      msg.Role,
+						Content:   msg.Content,
+						Timestamp: msg.Timestamp.Unix(),
+					}
+					if _, err := t.db.InsertMessage(ctx, msgRow); err != nil {
+						return fmt.Errorf("failed to insert message: %w", err)
+					}
+				}
+				return fmt.Errorf("%w: %s", ErrSessionBackfilled, session.ID)
+			}
+		}
+		return fmt.Errorf("%w: %s", ErrSessionAlreadyTracked, session.ID)
 	}
 
 	// Convert started_at to unix timestamp
@@ -335,24 +383,38 @@ func (t *SQLiteTracker) TrackClaudeSession(ctx context.Context, session *ClaudeS
 	}
 
 	sessionRow := &SessionRow{
-		ExternalID:      session.ID,
-		Source:          "claude",
-		ProjectPath:     session.ProjectPath,
-		Model:           session.Model,
-		Provider:        session.Provider,
-		StartedAt:       startedAt,
-		EndedAt:         endedAt,
-		InputTokens:     int64(session.Tokens.Input),
-		OutputTokens:    int64(session.Tokens.Output),
-		CachedTokens:    int64(session.Tokens.Cached),
-		ReasoningTokens: int64(session.Tokens.Reasoning),
-		TotalTokens:     int64(session.Tokens.Total),
-		Cost:            session.Cost,
+		ExternalID:          session.ID,
+		Source:              "claude",
+		ProjectPath:         session.ProjectPath,
+		Model:               session.Model,
+		Provider:            session.Provider,
+		StartedAt:           startedAt,
+		EndedAt:             endedAt,
+		InputTokens:         int64(session.Tokens.Input),
+		OutputTokens:        int64(session.Tokens.Output),
+		CacheCreationTokens: int64(session.Tokens.CacheCreation),
+		CacheReadTokens:     int64(session.Tokens.CacheRead),
+		ReasoningTokens:     int64(session.Tokens.Reasoning),
+		TotalTokens:         int64(session.Tokens.Total),
+		Cost:                session.Cost,
 	}
 
-	_, err = t.db.InsertSession(ctx, sessionRow)
+	sessionID, err := t.db.InsertSession(ctx, sessionRow)
 	if err != nil {
 		return fmt.Errorf("failed to insert session: %w", err)
+	}
+
+	// Insert messages
+	for _, msg := range session.Messages {
+		msgRow := &MessageRow{
+			SessionID: sessionID,
+			Role:      msg.Role,
+			Content:   msg.Content,
+			Timestamp: msg.Timestamp.Unix(),
+		}
+		if _, err := t.db.InsertMessage(ctx, msgRow); err != nil {
+			return fmt.Errorf("failed to insert message: %w", err)
+		}
 	}
 
 	return nil
@@ -380,6 +442,18 @@ func (t *SQLiteTracker) GetUsageStatsAll(ctx context.Context, period Period) (*U
 	stats, err := t.db.GetAggregatedStatsAll(ctx, startTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get aggregated stats: %w", err)
+	}
+
+	// Get message count across all sources
+	msgCount, err := t.db.GetMessageCountAll(ctx, startTimestamp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message count: %w", err)
+	}
+
+	// Get tool call count across all sources
+	toolCallCount, err := t.db.GetToolCallCountAll(ctx, startTimestamp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tool call count: %w", err)
 	}
 
 	// Get top 3 models across all sources
@@ -419,12 +493,15 @@ func (t *SQLiteTracker) GetUsageStatsAll(ctx context.Context, period Period) (*U
 		TotalSessionTime:   stats.TotalSessionTime,
 		TotalInputTokens:   stats.TotalInputTokens,
 		TotalOutputTokens:  stats.TotalOutputTokens,
-		TotalCachedTokens:  stats.TotalCachedTokens,
+		TotalCacheCreation: stats.TotalCacheCreation,
+		TotalCacheRead:     stats.TotalCacheRead,
 		TotalTokens:        stats.TotalTokens,
 		TotalCost:          stats.TotalCost,
+		TotalMessages:      msgCount,
+		TotalToolCalls:     toolCallCount,
 		UniqueProjects:     uniqueProjects,
 		SessionCount:       stats.SessionCount,
-		LastSyncTime:      lastSyncTime,
+		LastSyncTime:       lastSyncTime,
 	}, nil
 }
 

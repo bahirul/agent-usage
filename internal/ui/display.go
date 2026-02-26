@@ -11,14 +11,14 @@ import (
 
 // ANSI color codes
 const (
-	ColorReset  = "\033[0m"
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
-	ColorBlue   = "\033[34m"
-	ColorCyan   = "\033[36m"
+	ColorReset   = "\033[0m"
+	ColorRed     = "\033[31m"
+	ColorGreen   = "\033[32m"
+	ColorYellow  = "\033[33m"
+	ColorBlue    = "\033[34m"
+	ColorCyan    = "\033[36m"
 	ColorMagenta = "\033[35m"
-	ColorBold   = "\033[1m"
+	ColorBold    = "\033[1m"
 )
 
 // FormatDuration formats seconds into a human-readable duration
@@ -57,7 +57,7 @@ func FormatDateTime(timestamp int64) string {
 		return "-"
 	}
 	t := time.Unix(timestamp, 0)
-	return t.Format("2006-01-02 15:04")
+	return t.Format("2006-01-02 15:04:05")
 }
 
 // DisplayUsageStats displays the usage statistics with formatting
@@ -83,11 +83,13 @@ func DisplayUsageStats(agent string, period tracker.Period, stats *tracker.Usage
 			fmt.Printf("  End:        %s\n", FormatDateTime(*stats.LastSession.EndedAt))
 			fmt.Printf("  Duration:   %s\n", FormatDuration(duration))
 		}
-		fmt.Printf("  Tokens:     %s (in: %s, out: %s, cached: %s)\n",
+		fmt.Printf("  Tokens:     %s (in: %s, out: %s, cache: %s/%s)\n",
 			FormatTokens(stats.LastSession.TotalTokens),
 			FormatTokens(stats.LastSession.InputTokens),
 			FormatTokens(stats.LastSession.OutputTokens),
-			FormatTokens(stats.LastSession.CachedTokens))
+			FormatTokens(stats.LastSession.CacheCreationTokens),
+			FormatTokens(stats.LastSession.CacheReadTokens))
+		fmt.Printf("  Messages:   %d\n", stats.LastSession.MessageCount)
 	} else {
 		fmt.Printf("  %sNo sessions in this period%s\n", ColorYellow, ColorReset)
 	}
@@ -96,11 +98,12 @@ func DisplayUsageStats(agent string, period tracker.Period, stats *tracker.Usage
 	fmt.Printf("\n%s%sSummary%s\n", ColorBold, ColorMagenta, ColorReset)
 	fmt.Printf("  Total Sessions:     %d\n", stats.SessionCount)
 	fmt.Printf("  Total Session Time: %s\n", FormatDuration(stats.TotalSessionTime))
-	fmt.Printf("  Total Tokens:       %s (in: %s, out: %s, cached: %s)\n",
+	fmt.Printf("  Total Tokens:       %s (in: %s, out: %s, cache: %s/%s)\n",
 		FormatTokens(stats.TotalTokens),
 		FormatTokens(stats.TotalInputTokens),
 		FormatTokens(stats.TotalOutputTokens),
-		FormatTokens(stats.TotalCachedTokens))
+		FormatTokens(stats.TotalCacheCreation),
+		FormatTokens(stats.TotalCacheRead))
 	fmt.Printf("  Total Messages:     %d\n", stats.TotalMessages)
 
 	// Last Sync Time
@@ -169,15 +172,17 @@ func DisplayAllStats(period tracker.Period, stats *tracker.UsageStatsData, perAg
 
 	// Per-agent breakdown
 	fmt.Printf("\n%s%sPer-Agent Breakdown%s\n", ColorBold, ColorBlue, ColorReset)
-	fmt.Printf("  %-12s %10s %12s %20s\n", "Agent", "Sessions", "Time", "Tokens (in/out/cached)")
-	fmt.Printf("  %s\n", strings.Repeat("-", 58))
+	fmt.Printf("  %-12s %10s %12s %24s %10s\n", "Agent", "Sessions", "Time", "Tokens (in/out/crea/read)", "Messages")
+	fmt.Printf("  %s\n", strings.Repeat("-", 74))
 
 	var totalSessions int64
 	var totalTime int64
 	var totalTokens int64
 	var totalInputTokens int64
 	var totalOutputTokens int64
-	var totalCachedTokens int64
+	var totalCacheCreation int64
+	var totalCacheRead int64
+	var totalMessages int64
 
 	for _, p := range perAgent {
 		source := p.Source
@@ -186,36 +191,50 @@ func DisplayAllStats(period tracker.Period, stats *tracker.UsageStatsData, perAg
 		} else if source == "claude" {
 			source = "Claude"
 		}
-		fmt.Printf("  %-12s %10d %12s %s\n",
+		fmt.Printf("  %-12s %10d %12s %s %10d\n",
 			source,
 			p.SessionCount,
 			FormatDuration(p.TotalTime),
-			fmt.Sprintf("%s/%s/%s", FormatTokens(p.TotalInputTokens), FormatTokens(p.TotalOutputTokens), FormatTokens(p.TotalCachedTokens)))
+			fmt.Sprintf("%s/%s/%s/%s",
+				FormatTokens(p.TotalInputTokens),
+				FormatTokens(p.TotalOutputTokens),
+				FormatTokens(p.TotalCacheCreation),
+				FormatTokens(p.TotalCacheRead)),
+			p.TotalMessages)
 		totalSessions += p.SessionCount
 		totalTime += p.TotalTime
 		totalTokens += p.TotalTokens
 		totalInputTokens += p.TotalInputTokens
 		totalOutputTokens += p.TotalOutputTokens
-		totalCachedTokens += p.TotalCachedTokens
+		totalCacheCreation += p.TotalCacheCreation
+		totalCacheRead += p.TotalCacheRead
+		totalMessages += p.TotalMessages
 	}
 
 	// Combined totals
-	fmt.Printf("  %s\n", strings.Repeat("-", 58))
-	fmt.Printf("  %-12s %10d %12s %s\n",
+	fmt.Printf("  %s\n", strings.Repeat("-", 74))
+	fmt.Printf("  %-12s %10d %12s %s %10d\n",
 		"Total",
 		totalSessions,
 		FormatDuration(totalTime),
-		fmt.Sprintf("%s/%s/%s", FormatTokens(totalInputTokens), FormatTokens(totalOutputTokens), FormatTokens(totalCachedTokens)))
+		fmt.Sprintf("%s/%s/%s/%s",
+			FormatTokens(totalInputTokens),
+			FormatTokens(totalOutputTokens),
+			FormatTokens(totalCacheCreation),
+			FormatTokens(totalCacheRead)),
+		totalMessages)
 
 	// Summary Stats
 	fmt.Printf("\n%s%sSummary%s\n", ColorBold, ColorMagenta, ColorReset)
 	fmt.Printf("  Total Sessions:      %d\n", stats.SessionCount)
 	fmt.Printf("  Total Session Time:  %s\n", FormatDuration(stats.TotalSessionTime))
-	fmt.Printf("  Total Tokens:        %s (in: %s, out: %s, cached: %s)\n",
+	fmt.Printf("  Total Tokens:        %s (in: %s, out: %s, cache: %s/%s)\n",
 		FormatTokens(stats.TotalTokens),
 		FormatTokens(stats.TotalInputTokens),
 		FormatTokens(stats.TotalOutputTokens),
-		FormatTokens(stats.TotalCachedTokens))
+		FormatTokens(stats.TotalCacheCreation),
+		FormatTokens(stats.TotalCacheRead))
+	fmt.Printf("  Total Messages:      %d\n", stats.TotalMessages)
 	fmt.Printf("  Unique Projects:     %d\n", stats.UniqueProjects)
 
 	// Last Sync Time
@@ -278,10 +297,11 @@ func DisplayAllStats(period tracker.Period, stats *tracker.UsageStatsData, perAg
 
 			// Tokens
 			tokens := FormatTokens(s.TotalTokens)
-			cachedTokens := FormatTokens(s.CachedTokens)
+			creaTokens := FormatTokens(s.CacheCreationTokens)
+			readTokens := FormatTokens(s.CacheReadTokens)
 
-			fmt.Printf("  %d. %s %s | %s | %s | %s | %s (cached: %s)\n",
-				i+1, timeStr, source, model, project, duration, tokens, cachedTokens)
+			fmt.Printf("  %d. %s %s | %s | %s | %s | %s (cache: %s/%s, msgs: %d)\n",
+				i+1, timeStr, source, model, project, duration, tokens, creaTokens, readTokens, s.MessageCount)
 		}
 	} else {
 		fmt.Printf("  %sNo data%s\n", ColorYellow, ColorReset)

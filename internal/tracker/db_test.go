@@ -243,14 +243,19 @@ func TestParseClaudeSessionTokenTotal(t *testing.T) {
 		t.Errorf("Tokens.Output = %d; want 1500", parsed.Tokens.Output)
 	}
 
-	// Cached tokens: (200+300) + (100+150) = 750
-	if parsed.Tokens.Cached != 750 {
-		t.Errorf("Tokens.Cached = %d; want 750", parsed.Tokens.Cached)
+	// Cache Creation tokens: 200 + 100 = 300
+	if parsed.Tokens.CacheCreation != 300 {
+		t.Errorf("Tokens.CacheCreation = %d; want 300", parsed.Tokens.CacheCreation)
 	}
 
-	// Total should be Input + Output + Cached
-	expectedTotal := 3000 + 1500 + 750
+	// Cache Read tokens: 300 + 150 = 450
+	if parsed.Tokens.CacheRead != 450 {
+		t.Errorf("Tokens.CacheRead = %d; want 450", parsed.Tokens.CacheRead)
+	}
+
+	// Total should be Input + Output + CacheCreation + CacheRead
+	expectedTotal := 3000 + 1500 + 300 + 450
 	if parsed.Tokens.Total != expectedTotal {
-		t.Errorf("Tokens.Total = %d; want %d (Input + Output + Cached)", parsed.Tokens.Total, expectedTotal)
+		t.Errorf("Tokens.Total = %d; want %d (Input + Output + CacheCreation + CacheRead)", parsed.Tokens.Total, expectedTotal)
 	}
 }

@@ -13,6 +13,8 @@ type DB struct {
 	db *sql.DB
 }
 
+const messageCountSubquery = "COALESCE((SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id), 0) as message_count"
+
 // Open opens the database at the given path
 func Open(path string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
@@ -48,10 +50,11 @@ func (db *DB) migrate() error {
 		ended_at INTEGER,
 		input_tokens INTEGER DEFAULT 0,
 		output_tokens INTEGER DEFAULT 0,
-		cached_tokens INTEGER DEFAULT 0,
-		reasoning_tokens INTEGER DEFAULT 0,
+		cache_creation_tokens INTEGER DEFAULT 0,
+		cache_read_tokens INTEGER DEFAULT 0,
 		total_tokens INTEGER DEFAULT 0,
-		cost REAL DEFAULT 0
+		cost REAL DEFAULT 0,
+		reasoning_tokens INTEGER DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS messages (
@@ -85,37 +88,49 @@ func (db *DB) migrate() error {
 	`
 
 	_, err := db.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migrate existing database if columns are missing
+	// SQLite doesn't support IF NOT EXISTS in ALTER TABLE, so we try and ignore errors
+	db.db.Exec("ALTER TABLE sessions ADD COLUMN cache_creation_tokens INTEGER DEFAULT 0")
+	db.db.Exec("ALTER TABLE sessions ADD COLUMN cache_read_tokens INTEGER DEFAULT 0")
+	db.db.Exec("ALTER TABLE sessions ADD COLUMN reasoning_tokens INTEGER DEFAULT 0")
+
+	return nil
 }
 
 // SessionRow represents a session database row
 type SessionRow struct {
-	ID              int64
-	ExternalID      string
-	Source          string
-	ProjectPath     string
-	Model           string
-	Provider        string
-	StartedAt       int64
-	EndedAt         *int64
-	InputTokens     int64
-	OutputTokens    int64
-	CachedTokens    int64
-	ReasoningTokens int64
-	TotalTokens     int64
-	Cost            float64
+	ID                  int64
+	ExternalID          string
+	Source              string
+	ProjectPath         string
+	Model               string
+	Provider            string
+	StartedAt           int64
+	EndedAt             *int64
+	InputTokens         int64
+	OutputTokens        int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+	ReasoningTokens     int64
+	TotalTokens         int64
+	Cost                float64
+	MessageCount        int64
 }
 
 // InsertSession inserts a new session and returns its ID
 func (db *DB) InsertSession(ctx context.Context, s *SessionRow) (int64, error) {
 	query := `
 	INSERT INTO sessions (external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, reasoning_tokens, total_tokens, cost)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := db.db.ExecContext(ctx, query,
 		s.ExternalID, s.Source, s.ProjectPath, s.Model, s.Provider, s.StartedAt, s.EndedAt,
-		s.InputTokens, s.OutputTokens, s.CachedTokens, s.ReasoningTokens, s.TotalTokens, s.Cost)
+		s.InputTokens, s.OutputTokens, s.CacheCreationTokens, s.CacheReadTokens, s.ReasoningTokens, s.TotalTokens, s.Cost)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert session: %w", err)
 	}
@@ -125,15 +140,15 @@ func (db *DB) InsertSession(ctx context.Context, s *SessionRow) (int64, error) {
 // GetSessionByExternalID retrieves a session by its external ID
 func (db *DB) GetSessionByExternalID(ctx context.Context, externalID string) (*SessionRow, error) {
 	query := `SELECT id, external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost
+		input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, reasoning_tokens, total_tokens, cost
 		FROM sessions WHERE external_id = ?`
 
 	row := db.db.QueryRowContext(ctx, query, externalID)
 	var s SessionRow
 	err := row.Scan(
 		&s.ID, &s.ExternalID, &s.Source, &s.ProjectPath, &s.Model, &s.Provider,
-		&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CachedTokens,
-		&s.ReasoningTokens, &s.TotalTokens, &s.Cost,
+		&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CacheCreationTokens,
+		&s.CacheReadTokens, &s.ReasoningTokens, &s.TotalTokens, &s.Cost,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -185,9 +200,9 @@ func (db *DB) InsertToolCall(ctx context.Context, t *ToolCallRow) (int64, error)
 
 // GetAllSessions returns all sessions ordered by started_at descending
 func (db *DB) GetAllSessions(ctx context.Context) ([]SessionRow, error) {
-	query := `SELECT id, external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost
-		FROM sessions ORDER BY started_at DESC`
+	query := `SELECT s.id, s.external_id, s.source, s.project_path, s.model, s.provider, s.started_at, s.ended_at,
+		s.input_tokens, s.output_tokens, s.cache_creation_tokens, s.cache_read_tokens, s.reasoning_tokens, s.total_tokens, s.cost, ` + messageCountSubquery + `
+		FROM sessions s ORDER BY s.started_at DESC`
 
 	rows, err := db.db.QueryContext(ctx, query)
 	if err != nil {
@@ -200,8 +215,8 @@ func (db *DB) GetAllSessions(ctx context.Context) ([]SessionRow, error) {
 		var s SessionRow
 		err := rows.Scan(
 			&s.ID, &s.ExternalID, &s.Source, &s.ProjectPath, &s.Model, &s.Provider,
-			&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CachedTokens,
-			&s.ReasoningTokens, &s.TotalTokens, &s.Cost,
+			&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CacheCreationTokens,
+			&s.CacheReadTokens, &s.ReasoningTokens, &s.TotalTokens, &s.Cost, &s.MessageCount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -260,7 +275,8 @@ type AggregatedStats struct {
 	TotalSessionTime   int64
 	TotalInputTokens   int64
 	TotalOutputTokens  int64
-	TotalCachedTokens  int64
+	TotalCacheCreation int64
+	TotalCacheRead     int64
 	TotalTokens        int64
 	TotalCost          float64
 	SessionCount       int64
@@ -268,17 +284,17 @@ type AggregatedStats struct {
 
 // GetLastSession returns the most recent session within the time period
 func (db *DB) GetLastSession(ctx context.Context, source string, since int64) (*SessionRow, error) {
-	query := `SELECT id, external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost
-		FROM sessions WHERE source = ? AND started_at >= ? ORDER BY started_at DESC LIMIT 1`
+	query := `SELECT s.id, s.external_id, s.source, s.project_path, s.model, s.provider, s.started_at, s.ended_at,
+		s.input_tokens, s.output_tokens, s.cache_creation_tokens, s.cache_read_tokens, s.reasoning_tokens, s.total_tokens, ` + messageCountSubquery + `, s.cost
+		FROM sessions s WHERE s.source = ? AND s.started_at >= ? ORDER BY s.started_at DESC LIMIT 1`
 
 	row := db.db.QueryRowContext(ctx, query, source, since)
 	var s SessionRow
 	var endedAt sql.NullInt64
 	err := row.Scan(
 		&s.ID, &s.ExternalID, &s.Source, &s.ProjectPath, &s.Model, &s.Provider,
-		&s.StartedAt, &endedAt, &s.InputTokens, &s.OutputTokens, &s.CachedTokens,
-		&s.ReasoningTokens, &s.TotalTokens, &s.Cost,
+		&s.StartedAt, &endedAt, &s.InputTokens, &s.OutputTokens, &s.CacheCreationTokens,
+		&s.CacheReadTokens, &s.ReasoningTokens, &s.TotalTokens, &s.MessageCount, &s.Cost,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -321,7 +337,8 @@ func (db *DB) GetAggregatedStats(ctx context.Context, source string, since int64
 		COALESCE(SUM(CASE WHEN ended_at IS NOT NULL AND ended_at > started_at THEN ended_at - started_at ELSE 0 END), 0) as total_time,
 		COALESCE(SUM(input_tokens), 0) as total_input,
 		COALESCE(SUM(output_tokens), 0) as total_output,
-		COALESCE(SUM(cached_tokens), 0) as total_cached,
+		COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+		COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
 		COALESCE(SUM(total_tokens), 0) as total_tokens,
 		COALESCE(SUM(cost), 0) as total_cost,
 		COUNT(*) as session_count
@@ -332,7 +349,8 @@ func (db *DB) GetAggregatedStats(ctx context.Context, source string, since int64
 		&stats.TotalSessionTime,
 		&stats.TotalInputTokens,
 		&stats.TotalOutputTokens,
-		&stats.TotalCachedTokens,
+		&stats.TotalCacheCreation,
+		&stats.TotalCacheRead,
 		&stats.TotalTokens,
 		&stats.TotalCost,
 		&stats.SessionCount,
@@ -358,6 +376,33 @@ func (db *DB) GetMessageCount(ctx context.Context, source string, since int64) (
 	return count, nil
 }
 
+// GetMessageCountAll returns the total message count for all sessions in the period
+func (db *DB) GetMessageCountAll(ctx context.Context, since int64) (int64, error) {
+	query := `SELECT COALESCE(COUNT(m.id), 0)
+		FROM messages m
+		JOIN sessions s ON m.session_id = s.id
+		WHERE s.started_at >= ?`
+
+	var count int64
+	err := db.db.QueryRowContext(ctx, query, since).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get message count: %w", err)
+	}
+	return count, nil
+}
+
+// GetMessageCountBySessionID returns the total message count for a session
+func (db *DB) GetMessageCountBySessionID(ctx context.Context, sessionID int64) (int64, error) {
+	query := `SELECT COALESCE(COUNT(*), 0) FROM messages WHERE session_id = ?`
+
+	var count int64
+	err := db.db.QueryRowContext(ctx, query, sessionID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get message count by session: %w", err)
+	}
+	return count, nil
+}
+
 // GetToolCallCount returns the total tool call count for sessions in the period
 func (db *DB) GetToolCallCount(ctx context.Context, source string, since int64) (int64, error) {
 	query := `SELECT COALESCE(COUNT(t.id), 0)
@@ -367,6 +412,21 @@ func (db *DB) GetToolCallCount(ctx context.Context, source string, since int64) 
 
 	var count int64
 	err := db.db.QueryRowContext(ctx, query, source, since).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get tool call count: %w", err)
+	}
+	return count, nil
+}
+
+// GetToolCallCountAll returns the total tool call count for all sessions in the period
+func (db *DB) GetToolCallCountAll(ctx context.Context, since int64) (int64, error) {
+	query := `SELECT COALESCE(COUNT(t.id), 0)
+		FROM tool_calls t
+		JOIN sessions s ON t.session_id = s.id
+		WHERE s.started_at >= ?`
+
+	var count int64
+	err := db.db.QueryRowContext(ctx, query, since).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get tool call count: %w", err)
 	}
@@ -388,9 +448,9 @@ func (db *DB) GetUniqueProjects(ctx context.Context, source string, since int64)
 
 // GetSessionsInPeriod returns all sessions within a time period for debug
 func (db *DB) GetSessionsInPeriod(ctx context.Context, source string, since int64) ([]SessionRow, error) {
-	query := `SELECT id, external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost
-		FROM sessions WHERE source = ? AND started_at >= ? ORDER BY started_at DESC`
+	query := `SELECT s.id, s.external_id, s.source, s.project_path, s.model, s.provider, s.started_at, s.ended_at,
+		s.input_tokens, s.output_tokens, s.cache_creation_tokens, s.cache_read_tokens, s.reasoning_tokens, s.total_tokens, ` + messageCountSubquery + `, s.cost
+		FROM sessions s WHERE s.source = ? AND s.started_at >= ? ORDER BY s.started_at DESC`
 
 	rows, err := db.db.QueryContext(ctx, query, source, since)
 	if err != nil {
@@ -404,8 +464,8 @@ func (db *DB) GetSessionsInPeriod(ctx context.Context, source string, since int6
 		var endedAt sql.NullInt64
 		err := rows.Scan(
 			&s.ID, &s.ExternalID, &s.Source, &s.ProjectPath, &s.Model, &s.Provider,
-			&s.StartedAt, &endedAt, &s.InputTokens, &s.OutputTokens, &s.CachedTokens,
-			&s.ReasoningTokens, &s.TotalTokens, &s.Cost,
+			&s.StartedAt, &endedAt, &s.InputTokens, &s.OutputTokens, &s.CacheCreationTokens,
+			&s.CacheReadTokens, &s.ReasoningTokens, &s.TotalTokens, &s.MessageCount, &s.Cost,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -420,10 +480,10 @@ func (db *DB) GetSessionsInPeriod(ctx context.Context, source string, since int6
 
 // DailySummary represents daily aggregated statistics
 type DailySummary struct {
-	Date          string
-	SessionCount  int64
-	TotalTime     int64
-	TotalTokens   int64
+	Date         string
+	SessionCount int64
+	TotalTime    int64
+	TotalTokens  int64
 }
 
 // GetDailySummaries returns daily summaries for a time period (used for weekly period)
@@ -456,22 +516,24 @@ func (db *DB) GetDailySummaries(ctx context.Context, source string, since int64)
 
 // WeeklySummary represents weekly aggregated statistics
 type WeeklySummary struct {
-	WeekStart     string
-	SessionCount  int64
-	TotalTime     int64
-	TotalTokens   int64
+	WeekStart    string
+	SessionCount int64
+	TotalTime    int64
+	TotalTokens  int64
 }
 
 // PerAgentStats represents per-agent statistics
 type PerAgentStats struct {
-	Source           string
-	SessionCount     int64
-	TotalInputTokens  int64
-	TotalOutputTokens int64
-	TotalCachedTokens int64
-	TotalTokens      int64
-	TotalCost        float64
-	TotalTime        int64
+	Source             string
+	SessionCount       int64
+	TotalInputTokens   int64
+	TotalOutputTokens  int64
+	TotalCacheCreation int64
+	TotalCacheRead     int64
+	TotalTokens        int64
+	TotalCost          float64
+	TotalTime          int64
+	TotalMessages      int64
 }
 
 // GetWeeklySummaries returns weekly summaries for a time period (used for monthly period)
@@ -508,7 +570,8 @@ func (db *DB) GetAggregatedStatsAll(ctx context.Context, since int64) (*Aggregat
 		COALESCE(SUM(CASE WHEN ended_at IS NOT NULL AND ended_at > started_at THEN ended_at - started_at ELSE 0 END), 0) as total_time,
 		COALESCE(SUM(input_tokens), 0) as total_input,
 		COALESCE(SUM(output_tokens), 0) as total_output,
-		COALESCE(SUM(cached_tokens), 0) as total_cached,
+		COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+		COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
 		COALESCE(SUM(total_tokens), 0) as total_tokens,
 		COALESCE(SUM(cost), 0) as total_cost,
 		COUNT(*) as session_count
@@ -519,7 +582,8 @@ func (db *DB) GetAggregatedStatsAll(ctx context.Context, since int64) (*Aggregat
 		&stats.TotalSessionTime,
 		&stats.TotalInputTokens,
 		&stats.TotalOutputTokens,
-		&stats.TotalCachedTokens,
+		&stats.TotalCacheCreation,
+		&stats.TotalCacheRead,
 		&stats.TotalTokens,
 		&stats.TotalCost,
 		&stats.SessionCount,
@@ -532,16 +596,22 @@ func (db *DB) GetAggregatedStatsAll(ctx context.Context, since int64) (*Aggregat
 
 // GetPerAgentStats returns stats grouped by source
 func (db *DB) GetPerAgentStats(ctx context.Context, since int64) ([]PerAgentStats, error) {
-	query := `SELECT source,
+	query := `SELECT s.source,
 		COUNT(*) as session_count,
-		COALESCE(SUM(input_tokens), 0) as total_input,
-		COALESCE(SUM(output_tokens), 0) as total_output,
-		COALESCE(SUM(cached_tokens), 0) as total_cached,
-		COALESCE(SUM(total_tokens), 0) as total_tokens,
-		COALESCE(SUM(cost), 0) as total_cost,
-		COALESCE(SUM(CASE WHEN ended_at IS NOT NULL AND ended_at > started_at THEN ended_at - started_at ELSE 0 END), 0) as total_time
-		FROM sessions WHERE started_at >= ?
-		GROUP BY source ORDER BY session_count DESC`
+		COALESCE(SUM(s.input_tokens), 0) as total_input,
+		COALESCE(SUM(s.output_tokens), 0) as total_output,
+		COALESCE(SUM(s.cache_creation_tokens), 0) as total_cache_creation,
+		COALESCE(SUM(s.cache_read_tokens), 0) as total_cache_read,
+		COALESCE(SUM(s.total_tokens), 0) as total_tokens,
+		COALESCE(SUM(s.cost), 0) as total_cost,
+		COALESCE(SUM(CASE WHEN s.ended_at IS NOT NULL AND s.ended_at > s.started_at THEN s.ended_at - s.started_at ELSE 0 END), 0) as total_time,
+		COALESCE(SUM(m.message_count), 0) as total_messages
+		FROM sessions s
+		LEFT JOIN (
+			SELECT session_id, COUNT(*) as message_count FROM messages GROUP BY session_id
+		) m ON m.session_id = s.id
+		WHERE s.started_at >= ?
+		GROUP BY s.source ORDER BY session_count DESC`
 
 	rows, err := db.db.QueryContext(ctx, query, since)
 	if err != nil {
@@ -552,7 +622,7 @@ func (db *DB) GetPerAgentStats(ctx context.Context, since int64) ([]PerAgentStat
 	var stats []PerAgentStats
 	for rows.Next() {
 		var s PerAgentStats
-		if err := rows.Scan(&s.Source, &s.SessionCount, &s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCachedTokens, &s.TotalTokens, &s.TotalCost, &s.TotalTime); err != nil {
+		if err := rows.Scan(&s.Source, &s.SessionCount, &s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCacheCreation, &s.TotalCacheRead, &s.TotalTokens, &s.TotalCost, &s.TotalTime, &s.TotalMessages); err != nil {
 			return nil, fmt.Errorf("failed to scan per-agent stats: %w", err)
 		}
 		stats = append(stats, s)
@@ -598,9 +668,9 @@ func (db *DB) GetUniqueProjectsAll(ctx context.Context, since int64) (int64, err
 
 // GetRecentSessions returns the most recent N sessions ordered by start time descending
 func (db *DB) GetRecentSessions(ctx context.Context, limit int) ([]SessionRow, error) {
-	query := `SELECT id, external_id, source, project_path, model, provider, started_at, ended_at,
-		input_tokens, output_tokens, cached_tokens, reasoning_tokens, total_tokens, cost
-		FROM sessions ORDER BY started_at DESC LIMIT ?`
+	query := `SELECT s.id, s.external_id, s.source, s.project_path, s.model, s.provider, s.started_at, s.ended_at,
+		s.input_tokens, s.output_tokens, s.cache_creation_tokens, s.cache_read_tokens, s.reasoning_tokens, s.total_tokens, ` + messageCountSubquery + `, s.cost
+		FROM sessions s ORDER BY s.started_at DESC LIMIT ?`
 
 	rows, err := db.db.QueryContext(ctx, query, limit)
 	if err != nil {
@@ -612,8 +682,8 @@ func (db *DB) GetRecentSessions(ctx context.Context, limit int) ([]SessionRow, e
 	for rows.Next() {
 		var s SessionRow
 		if err := rows.Scan(&s.ID, &s.ExternalID, &s.Source, &s.ProjectPath, &s.Model, &s.Provider,
-			&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CachedTokens,
-			&s.ReasoningTokens, &s.TotalTokens, &s.Cost); err != nil {
+			&s.StartedAt, &s.EndedAt, &s.InputTokens, &s.OutputTokens, &s.CacheCreationTokens,
+			&s.CacheReadTokens, &s.ReasoningTokens, &s.TotalTokens, &s.MessageCount, &s.Cost); err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
 		}
 		sessions = append(sessions, s)

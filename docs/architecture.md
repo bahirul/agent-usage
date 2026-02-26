@@ -8,7 +8,7 @@ Agent Usage Tracker is a Go CLI application that tracks AI coding agent usage. T
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI Layer                            │
 │                    (cmd/root.go)                            │
-│  - syncCmd    - statsCmd    - usageCmd    - infoCmd       │
+│  - statsCmd    - usageCmd    - infoCmd                      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -48,47 +48,6 @@ Agent Usage Tracker is a Go CLI application that tracks AI coding agent usage. T
 
 ## Data Flow
 
-### Sync Command Flow
-
-```
-User runs: ./agent-usage sync codex
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ cmd/root.go: syncCmd.Run()              │
-│ - Read agent name from args             │
-└─────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ Find session files                      │
-│ - Walk ~/.codex/sessions directory      │
-│ - Find all *.jsonl files                │
-└─────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ Parse each session file                  │
-│ - CodexParser.ParseCodexSession()       │
-│ - Extract: ID, model, tokens, etc.      │
-└─────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ Store in database                       │
-│ - SQLiteTracker.TrackSession()          │
-│ - Insert into sessions table            │
-│ - Insert messages, tool_calls          │
-└─────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ Update last sync time                   │
-│ - SetLastSyncTime()                    │
-│ - Store in metadata table               │
-└─────────────────────────────────────────┘
-```
-
 ### Stats Command Flow
 
 ```
@@ -96,8 +55,9 @@ User runs: ./agent-usage stats day
          │
          ▼
 ┌─────────────────────────────────────────┐
-│ Check autosync config                   │
-│ - If autosync=true, call runSyncAll()  │
+│ Automatically sync all enabled agents   │
+│ - runSyncAll() calls runSync()          │
+│ - Scans, parses, and stores sessions    │
 └─────────────────────────────────────────┘
          │
          ▼

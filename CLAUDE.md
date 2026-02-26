@@ -11,7 +11,7 @@ Agent Usage Tracker is a Go CLI tool to track AI coding agent usage (Codex, Clau
 ```bash
 make build                          # Build binary to build/agent-usage
 ./build/agent-usage --help          # Show help
-./build/agent-usage info            # Show loaded config
+./build/agent-usage info            # Show loaded config and status
 ./build/agent-usage -c /path/to/config.toml info  # Use custom config
 
 # Or use Go directly
@@ -29,22 +29,21 @@ go build -o agent-usage .           # Build binary to current directory
 Config file format (TOML):
 ```toml
 [agents]
-# Auto-sync before showing stats/usage (default: false)
-autosync = true
-
-[agents]
 codex = true
-claude_code = true
+claude = true
+
+[sync]
+autosync = true
+sync_interval = 5  # seconds between syncs (default: 5)
 ```
 
 Default config path: `~/.agent-usage/config.toml`
 
 ## Commands
 
-- `./agent-usage sync <agent>` - Sync sessions from agent directory (codex, claude)
-- `./agent-usage sync all` - Sync all enabled agents at once
-- `./agent-usage stats [period]` - Show combined stats (auto-syncs if autosync=true)
-- `./agent-usage usage <agent> [period]` - Show per-agent stats (auto-syncs if autosync=true)
+- `./agent-usage stats [period]` - Show combined stats (automatically syncs all agents)
+- `./agent-usage usage <agent> [period]` - Show per-agent stats (automatically syncs the agent)
+- `./agent-usage info` - Show configuration and status
 
 ## Testing
 
@@ -70,6 +69,5 @@ Debug output shows:
 
 ## Features
 
-- **Last Sync Time**: Stats and usage output display the last sync timestamp. Shows "Never synced" if no sync has occurred.
-- **Auto-sync**: When `autosync=true` in config, the `stats` and `usage` commands automatically sync before showing data.
-- **Sync All**: Use `sync all` to sync all enabled agents in one command.
+- **Last Sync Time**: Stats and usage output display the last sync timestamp with seconds precision. Shows "Never synced" if no sync has occurred.
+- **Info Command**: Shows configuration and last sync time per agent.
