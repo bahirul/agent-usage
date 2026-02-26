@@ -331,6 +331,9 @@ func runSync(agentName string) {
 		return
 	}
 
+	// Show loading indicator
+	fmt.Printf("Syncing %s sessions...\n", agentName)
+
 	// Parse and track each session
 	ctx := context.Background()
 	tracked := 0
@@ -364,6 +367,9 @@ func runSync(agentName string) {
 	}
 	if backfilled > 0 {
 		fmt.Printf("[Sync] Updated %d existing sessions for %s\n", backfilled, agentName)
+	}
+	if tracked == 0 && backfilled == 0 {
+		fmt.Printf("[Sync] %s sessions up to date\n", agentName)
 	}
 
 	// Save last sync time
