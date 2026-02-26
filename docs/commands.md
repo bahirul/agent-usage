@@ -161,17 +161,21 @@ Use the `--debug` or `-d` flag with `usage` command to see:
 ```
 [DEBUG] Time Filter:
   Period: day
-  Start:  2026-02-25 14:30:45 (timestamp: 1737825045)
-  End:    2026-02-26 14:30:45 (timestamp: 1737911445)
+  Start:  2026-02-25 12:31:56 (timestamp: 1771993916)
+  End:    2026-02-26 12:31:56 (timestamp: 1772080316)
   Agent:  codex
 
-[DEBUG] Sessions Data (5 sessions):
-  1. ID: session-abc
-     Model: o3, Project: /Users/user/project
-     Started: 2026-02-26 10:00:00
-     Ended: 2026-02-26 10:30:00, Duration: 30m0s
-     Tokens: 100.0K (in: 80.0K, out: 20.0K, cache: 0/0)
-  ...
+[DEBUG] Sessions Data (2 sessions):
+  1. ID: 019c9817-6d9b-74c0-ad33-0b9f372c4ed3
+     Model: gpt-5.2-codex, Project: my-project
+     Started: 2026-02-26 11:56:41
+     Ended: 2026-02-26 12:02:41, Duration: 6.0m
+     Tokens: 1.3M (in: 1.3M, out: 17.6K, cache: 1.2M/0)
+  2. ID: 019c9816-43ba-7fb1-b324-94642d766f15
+     Model: gpt-5.2-codex, Project: my-project
+     Started: 2026-02-26 11:56:02
+     Ended: 2026-02-26 11:56:03, Duration: 1s
+     Tokens: 2.6K (in: 2.6K, out: 0, cache: 0/0)
 ```
 
 ## Exit Codes
