@@ -5,7 +5,7 @@ Welcome to the Agent Usage Tracker documentation.
 ## Quick Links
 
 - [README.md](../README.md) - Quick start guide
-- [CLAUDE.md](../CLAUDE.md) - Developer notes
+- [AGENTS.md](../AGENTS.md) - Adding support for new agents
 
 ## Technical Documentation
 
