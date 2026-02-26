@@ -18,10 +18,6 @@ The tool looks for configuration in this order:
 [agents]
 codex = true
 claude = true
-
-[sync]
-autosync = true
-sync_interval = 5
 ```
 
 ## Configuration Options
@@ -59,22 +55,6 @@ database = "/Users/name/data/agent-usage.db"
 database = "./data/usage.db"
 ```
 
-### [sync]
-
-Controls sync behavior.
-
-| Key | Type | Description | Default |
-|-----|------|-------------|---------|
-| `autosync` | boolean | Enable automatic sync | `false` |
-| `sync_interval` | integer | Sync interval in seconds | `5` |
-
-Example:
-```toml
-[sync]
-autosync = true
-sync_interval = 10
-```
-
 ## Environment Variables
 
 Currently not supported. Use config file or `--config` flag.
@@ -97,11 +77,6 @@ claude = true
 
 # Custom database location
 database = "/Users/developer/data/agent-usage.db"
-
-# Background sync configuration
-[sync]
-autosync = true
-sync_interval = 5
 ```
 
 ### Development Setup
@@ -113,11 +88,6 @@ claude = true
 
 # Use local database for development
 database = "./dev.db"
-
-# Enable background sync during development
-[sync]
-autosync = true
-sync_interval = 5
 ```
 
 ## Config Loading Process
@@ -160,17 +130,11 @@ func LoadConfig(configPath string) (*Config, error) {
 type Config struct {
     Agents      AgentsConfig `mapstructure:"agents"`
     Database    string       `mapstructure:"database"`
-    Sync        SyncConfig   `mapstructure:"sync"`
 }
 
 type AgentsConfig struct {
     Codex      bool `mapstructure:"codex"`
     ClaudeCode bool `mapstructure:"claude"`
-}
-
-type SyncConfig struct {
-    AutoSync     bool `mapstructure:"autosync"`
-    SyncInterval int  `mapstructure:"sync_interval"`
 }
 ```
 

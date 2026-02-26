@@ -44,21 +44,12 @@ make clean        # Clean build artifacts
 1. Create a config file at `~/.agent-usage/config.toml`:
 
 ```toml
-# Optional: auto-sync before showing stats
-autosync = false
-
-[agents]
-## Quick Start
-
-1. Create a config file at `~/.agent-usage/config.toml`:
-
-```toml
 [agents]
 codex = true
-claude_code = true
+claude = true
 ```
 
-2. View usage statistics (sync happens automatically):
+2. View usage statistics (syncs automatically):
 
 ```bash
 ./agent-usage stats            # Combined stats for all agents
@@ -70,8 +61,8 @@ claude_code = true
 
 | Command | Description |
 |---------|-------------|
-| `./agent-usage stats [period]` | Show combined usage stats (autosyncs all) |
-| `./agent-usage usage <agent> [period]` | Show per-agent stats (autosyncs agent) |
+| `./agent-usage stats [period]` | Show combined usage stats |
+| `./agent-usage usage <agent> [period]` | Show per-agent stats |
 | `./agent-usage info` | Show loaded configuration |
 | `./agent-usage --help` | Show help |
 

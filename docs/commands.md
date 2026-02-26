@@ -6,8 +6,8 @@ This document provides detailed reference for all CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `stats` | Show combined usage statistics (autosyncs all) |
-| `usage` | Show per-agent usage statistics (autosyncs agent) |
+| `stats` | Show combined usage statistics |
+| `usage` | Show per-agent usage statistics |
 | `info` | Display loaded configuration and status |
 
 ## Global Flags
@@ -45,13 +45,13 @@ Shows aggregated statistics across all enabled agents. This command **automatica
 ### Examples
 
 ```bash
-# Today's stats (autosyncs all)
+# Today's stats
 ./agent-usage stats
 
-# This week's stats (autosyncs all)
+# This week's stats
 ./agent-usage stats week
 
-# Last 30 days (autosyncs all)
+# Last 30 days
 ./agent-usage stats month
 ```
 
@@ -94,10 +94,10 @@ Shows detailed statistics for a single agent. This command **automatically syncs
 ### Examples
 
 ```bash
-# Codex stats for today (autosyncs codex)
+# Codex stats for today
 ./agent-usage usage codex
 
-# Claude stats for this week (autosyncs claude)
+# Claude stats for this week
 ./agent-usage usage claude week
 
 # With debug output

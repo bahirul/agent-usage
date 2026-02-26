@@ -109,10 +109,6 @@ Config file format (TOML):
 [agents]
 codex = true
 claude = true
-
-[sync]
-autosync = true
-sync_interval = 5
 ```
 
 Default config path: `~/.agent-usage/config.toml`
